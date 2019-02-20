@@ -28,6 +28,16 @@ private:
     Panel *myPanel;
 };
 
+class PanelStretch : public QWidget {
+    Q_OBJECT
+public:
+    PanelStretch(QWidget *parent, Panel *panel);
+protected:
+    void resizeEvent(QResizeEvent *) override;
+private:
+    Panel *myPanel;
+};
+
 class Shell;
 class Panel : public QWidget, public Model {
     Q_OBJECT
@@ -44,6 +54,7 @@ public:
 protected:
     void showEvent(QShowEvent *) override;
 public slots:
+    void refreshMask();
     void geometryChanged();
 private:
     Shell *myShell;
@@ -55,8 +66,9 @@ private:
     bool setStruts;
     int borderRadius;
     void roundCorners();
-    int blurRadius;
     bool transparent;
+    bool stretchMask;
+    void refresh();
     bool displayShadow;
     int myIconSize;
     QString offsetTop, offsetLeft, offsetRight, offsetBottom;

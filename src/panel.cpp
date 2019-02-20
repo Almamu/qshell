@@ -1,4 +1,5 @@
 #include <QWidget>
+#include <QWindow>
 #include <QBoxLayout>
 #include <QDebug>
 #include <QApplication>
@@ -18,6 +19,7 @@
 #include "desktop.h"
 #include "utils.h"
 
+// ---
 
 Q::PanelContainer::PanelContainer(Panel *panel) : QWidget(panel), myPanel(panel) {
     QBoxLayout *layout = new QBoxLayout(QBoxLayout::LeftToRight, this);
@@ -31,7 +33,16 @@ void Q::PanelContainer::showEvent(QShowEvent *) {
     move(0, 0);
     resize(myPanel->size());
     setMaximumSize(myPanel->size());
-    qDebug() << size();
+}
+
+// ---
+
+Q::PanelStretch::PanelStretch(QWidget *parent, Panel *panel)
+    : QWidget(parent), myPanel(panel) {
+}
+
+void Q::PanelStretch::resizeEvent(QResizeEvent *ev) {
+    myPanel->refreshMask();
 }
 
 // ----------
@@ -107,36 +118,19 @@ void Q::Panel::load(KConfigGroup *grp) {
     offsetBottom = grp->readEntry("OffsetBottom", "0");
     borderRadius = grp->readEntry("BorderRadius", 0);
     setStruts = grp->readEntry("Struts", true);
+    stretchMask = grp->readEntry("StretchMask", false);
     static_cast<QBoxLayout*>(container->layout())->setDirection((QBoxLayout::Direction)grp->readEntry("Direction", 0));
 
     alwaysTop = grp->readEntry("AlwaysTop", false);
     alwaysBottom = grp->readEntry("AlwaysBottom", false);
 
-    // transparency
-    if(transparent) {
-        setAttribute(Qt::WA_NoSystemBackground, true);
-        setAttribute(Qt::WA_TranslucentBackground, true);
+    const int screen = grp->readEntry("Screen", -1);
+    QList<QScreen *> screens = QGuiApplication::screens();
+    if(screen > 0 && screen <= screens.size()) {
+        windowHandle()->setScreen(screens.at(screen));
     }
 
-    // xlib windows
-    if(!shell()->wmManagePanels()) { // workaround for i3, openbox...
-        // stack
-        if(alwaysTop) {
-            XRaiseWindow(QX11Info::display(), winId());
-        } else if(alwaysBottom) {
-            XLowerWindow(QX11Info::display(), winId());
-        }
-        setWindowFlags(windowFlags() | Qt::X11BypassWindowManagerHint);
-    } else {
-        // stack
-        if(alwaysTop) {
-            setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
-        } else if(alwaysBottom) {
-            setWindowFlags(windowFlags() | Qt::WindowStaysOnBottomHint);
-        }
-        KWindowSystem::setState(winId(), NET::SkipTaskbar);
-        KWindowSystem::setOnAllDesktops(winId(), true);
-    }
+    refresh();
 
     // widgets
     const QStringList widgets = grp->readEntry("Widgets", QStringList());
@@ -197,20 +191,68 @@ void Q::Panel::addWidget(QWidget *widget) {
 }
 
 void Q::Panel::addStretch(int stretch) {
-    QWidget *w = new QWidget(container);
+    QWidget *w;
+    if(stretchMask) {
+        w = new PanelStretch(container, this);
+    } else {
+        w = new QWidget(container);
+    }
     w->setProperty("class", "panel-stretch");
     w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     static_cast<QBoxLayout*>(container->layout())->addWidget(w, stretch);
 }
 
 // Rendering
-void Q::Panel::showEvent(QShowEvent *) {
-    roundCorners();
-
+void Q::Panel::refresh() {
+    // transparency
     if(transparent) {
         setAttribute(Qt::WA_NoSystemBackground, true);
         setAttribute(Qt::WA_TranslucentBackground, true);
     }
+
+    // xlib windows
+    if(!shell()->wmManagePanels()) { // workaround for i3, openbox...
+        // stack
+        if(alwaysTop) {
+            XRaiseWindow(QX11Info::display(), winId());
+        } else if(alwaysBottom) {
+            XLowerWindow(QX11Info::display(), winId());
+        }
+        setWindowFlags(windowFlags() | Qt::X11BypassWindowManagerHint);
+    } else {
+        // stack
+        if(alwaysTop) {
+            setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
+        } else if(alwaysBottom) {
+            setWindowFlags(windowFlags() | Qt::WindowStaysOnBottomHint);
+        }
+        KWindowSystem::setState(winId(), NET::SkipTaskbar);
+        KWindowSystem::setOnAllDesktops(winId(), true);
+    }
+
+    // mask
+    refreshMask();
+}
+
+void Q::Panel::refreshMask() {
+    if(stretchMask) {
+        qDebug() << "stretch transparent";
+        QRegion reg(frameGeometry());
+        reg -= QRegion(geometry());
+        reg += childrenRegion();
+        for (int i = 0; i < container->layout()->count(); ++i) {
+            QWidget *w = container->layout()->itemAt(i)->widget();
+            if (w != NULL && w->property("class") == "panel-stretch") {
+                reg -= w->geometry();
+            }
+        }
+        setMask(reg);
+    }
+}
+
+void Q::Panel::showEvent(QShowEvent *) {
+    roundCorners();
+    refresh();
 
     KWindowSystem::setState(winId(), NET::SkipTaskbar);
     Display *display = QX11Info::display();

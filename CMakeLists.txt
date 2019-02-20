@@ -40,6 +40,16 @@ find_package(KF5Solid NO_MODULE)
 
 find_package(X11 REQUIRED COMPONENTS Xext)
 
+find_path(PULSEAUDIO_INCLUDE_DIR
+        NAMES pulse/pulseaudio.h
+        DOC "The PulseAudio include directory"
+        )
+find_library(PULSEAUDIO_LIBRARY
+        NAMES pulse
+        DOC "The PulseAudio library"
+        )
+include_directories(${PULSEAUDIO_INCLUDE_DIRS})
+
 add_definitions(-DQT_NO_URL_CAST_FROM_STRING)
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_definitions("-Wno-mismatched-tags")
@@ -56,7 +66,6 @@ file(GLOB shell_SRCS RELATIVE ${CMAKE_SOURCE_DIR} "src/*.cpp")
 add_executable(qshell ${shell_SRCS})
 
 target_link_libraries(qshell
-    Qt5::Concurrent
     Qt5::DBus
     Qt5::X11Extras
     KF5::ConfigCore
